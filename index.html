@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no, viewport-fit=cover" />
   <meta name="format-detection" content="telephone=no" />
 
   <!-- OG Meta (동적으로 config에서 채워짐) -->
@@ -129,6 +129,15 @@
     </section>
 
     <!-- ── Location ── -->
+    <section class="section video" id="videoSection" hidden>
+      <div class="section__inner anim-target">
+        <h2 class="section__title script-font">Wedding Video</h2>
+        <div class="video__frame" id="videoFrame">
+          <video class="video__player" id="weddingVideo" muted autoplay loop playsinline preload="metadata" aria-label="웨딩 영상"></video>
+        </div>
+      </div>
+    </section>
+
     <section class="section location" id="location">
       <div class="section__inner anim-target">
         <h2 class="section__title script-font">Location</h2>

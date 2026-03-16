@@ -17,6 +17,8 @@
   /* ── Image Auto-Detection ── */
   // Discovered images stored here for use across functions
   let galleryImages = [];
+  let storyImages = [];
+  let viewerImages = [];
 
   function loadImagesFromFolder(folder, maxAttempts = 50) {
     return new Promise(resolve => {
@@ -46,6 +48,43 @@
         }
 
         tryNext();
+    });
+  }
+
+  function loadVideoAsset() {
+    const candidates = ['images/video/1.mp4', 'images/video/1.webm', 'images/video/1.mov'];
+
+    return new Promise((resolve) => {
+      function tryNext(index = 0) {
+        if (index >= candidates.length) {
+          resolve(null);
+          return;
+        }
+
+        const probe = document.createElement('video');
+        const cleanup = () => {
+          probe.onloadeddata = null;
+          probe.onerror = null;
+          probe.removeAttribute('src');
+          probe.load();
+        };
+
+        probe.preload = 'metadata';
+        probe.muted = true;
+        probe.playsInline = true;
+        probe.onloadeddata = () => {
+          const src = candidates[index];
+          cleanup();
+          resolve(src);
+        };
+        probe.onerror = () => {
+          cleanup();
+          tryNext(index + 1);
+        };
+        probe.src = candidates[index];
+      }
+
+      tryNext();
     });
   }
 
@@ -286,18 +325,24 @@
     // Show loading placeholder
     container.innerHTML = '<div class="section-loading"><span class="section-loading__dot"></span><span class="section-loading__dot"></span><span class="section-loading__dot"></span></div>';
 
-    const storyImages = await loadImagesFromFolder('story');
+    storyImages = await loadImagesFromFolder('story');
 
     if (storyImages.length > 0) {
       container.innerHTML = storyImages
         .map(
-          (src) => `
-        <div class="story__img-card anim-scale-target">
+          (src, i) => `
+        <div class="story__img-card anim-scale-target" data-index="${i}">
           <img src="${src}" alt="우리의 이야기" loading="lazy" />
         </div>
       `
         )
         .join('');
+      container.addEventListener('click', (e) => {
+        const card = e.target.closest('.story__img-card');
+        if (card) {
+          openViewer(storyImages, Number(card.dataset.index || 0));
+        }
+      });
       // Re-observe new elements for scroll animations
       observeNewElements(container);
     } else {
@@ -335,12 +380,41 @@
     grid.addEventListener('click', (e) => {
       const item = e.target.closest('.gallery__item');
       if (item) {
-        openViewer(+item.dataset.index);
+        openViewer(galleryImages, Number(item.dataset.index || 0));
       }
     });
 
     // Re-observe new elements for scroll animations
     observeNewElements(grid);
+  }
+
+  async function initVideoSection() {
+    const section = $('#videoSection');
+    const frame = $('#videoFrame');
+    const video = $('#weddingVideo');
+    const videoSrc = await loadVideoAsset();
+    if (!section || !video || !videoSrc) return;
+
+    video.src = videoSrc;
+    video.muted = true;
+    video.defaultMuted = true;
+    video.autoplay = true;
+    video.loop = true;
+    video.playsInline = true;
+    video.controls = false;
+    video.setAttribute('muted', '');
+    video.setAttribute('autoplay', '');
+    video.setAttribute('playsinline', '');
+    video.removeAttribute('controls');
+    video.setAttribute('disablepictureinpicture', '');
+    video.setAttribute('disableremoteplayback', '');
+    video.addEventListener('loadedmetadata', () => {
+      if (frame && video.videoWidth && video.videoHeight) {
+        frame.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+      }
+    }, { once: true });
+    section.hidden = false;
+    video.play().catch(() => {});
   }
 
   /* ── Photo Viewer ── */
@@ -349,13 +423,15 @@
   let touchDeltaX = 0;
   let isSwiping = false;
 
-  function openViewer(index) {
+  function openViewer(images, index) {
     viewerIdx = index;
     const viewer = $('#viewer');
     const track = $('#viewer-track');
-    if (!viewer || !track || galleryImages.length === 0) return;
+    if (!viewer || !track || !images.length) return;
 
-    track.innerHTML = galleryImages
+    viewerImages = images;
+
+    track.innerHTML = viewerImages
       .map(
         (src) => `
       <div class="viewer__slide">
@@ -382,7 +458,7 @@
   function goToSlide(idx, animate = true) {
     const track = $('#viewer-track');
     const counter = $('#viewer-counter');
-    const total = galleryImages.length;
+    const total = viewerImages.length;
     if (total === 0) return;
     if (idx < 0) idx = 0;
     if (idx >= total) idx = total - 1;
@@ -460,6 +536,11 @@
     if (addr) addr.textContent = w.address;
     if (tel) tel.textContent = `Tel. ${w.tel}`;
     if (mapImg) mapImg.src = 'images/location/1.jpg';
+    if (mapImg) {
+      mapImg.addEventListener('click', () => {
+        openViewer(['images/location/1.jpg'], 0);
+      });
+    }
 
     const kakao = $('#btn-kakao-map');
     const naver = $('#btn-naver-map');
@@ -698,6 +779,7 @@
     await Promise.all([
       initStory(),
       initGallery(),
+      initVideoSection(),
     ]);
   }
 
