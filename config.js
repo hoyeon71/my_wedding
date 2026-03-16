@@ -87,12 +87,12 @@ const CONFIG = {
   kakaoShare: {
     // Kakao Developers 앱키 (JavaScript 키)
     appKey: "",
-    title: "홍길동 ♥ 김영희 결혼합니다",
-    description: "2025년 5월 17일 토요일 오후 1시\n더 채플앳 청담",
+    title: "최호연 ♥ 이주연 결혼합니다",
+    description: "2026년 9월 19일 토요일 오후 12시\n메리빌리아 더 프레스티지 수원",
   },
 
   meta: {
-    title: "홍길동 ♥ 김영희 결혼합니다",
-    description: "2025년 5월 17일 토요일 오후 1시, 더 채플앳 청담",
+    title: "최호연 ♥ 이주연 결혼합니다",
+    description: "2025년 5월 17일 토요일 오후 12시, 메리빌리아 더 프레스티지 수원",
   },
 };

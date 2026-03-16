@@ -51,43 +51,6 @@
     });
   }
 
-  function loadVideoAsset() {
-    const candidates = ['images/video/1.mp4', 'images/video/1.webm', 'images/video/1.mov'];
-
-    return new Promise((resolve) => {
-      function tryNext(index = 0) {
-        if (index >= candidates.length) {
-          resolve(null);
-          return;
-        }
-
-        const probe = document.createElement('video');
-        const cleanup = () => {
-          probe.onloadeddata = null;
-          probe.onerror = null;
-          probe.removeAttribute('src');
-          probe.load();
-        };
-
-        probe.preload = 'metadata';
-        probe.muted = true;
-        probe.playsInline = true;
-        probe.onloadeddata = () => {
-          const src = candidates[index];
-          cleanup();
-          resolve(src);
-        };
-        probe.onerror = () => {
-          cleanup();
-          tryNext(index + 1);
-        };
-        probe.src = candidates[index];
-      }
-
-      tryNext();
-    });
-  }
-
   /* ── Meta Tags ── */
   function initMeta() {
     document.title = CONFIG.meta.title;
@@ -392,10 +355,9 @@
     const section = $('#videoSection');
     const frame = $('#videoFrame');
     const video = $('#weddingVideo');
-    const videoSrc = await loadVideoAsset();
-    if (!section || !video || !videoSrc) return;
+    const playFallback = $('#videoPlayFallback');
+    if (!section || !video) return;
 
-    video.src = videoSrc;
     video.muted = true;
     video.defaultMuted = true;
     video.autoplay = true;
@@ -408,13 +370,52 @@
     video.removeAttribute('controls');
     video.setAttribute('disablepictureinpicture', '');
     video.setAttribute('disableremoteplayback', '');
-    video.addEventListener('loadedmetadata', () => {
+    section.hidden = false;
+
+    const tryPlay = () => {
+      video.play()
+        .then(() => {
+          if (playFallback) playFallback.hidden = true;
+        })
+        .catch(() => {
+          if (playFallback) playFallback.hidden = false;
+        });
+    };
+
+    video.onloadedmetadata = () => {
       if (frame && video.videoWidth && video.videoHeight) {
         frame.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
       }
-    }, { once: true });
-    section.hidden = false;
-    video.play().catch(() => {});
+      if (video.duration && video.duration > 0.1) {
+        video.currentTime = 0.1;
+      }
+      tryPlay();
+    };
+
+    video.oncanplay = () => {
+      tryPlay();
+    };
+
+    video.onerror = () => {
+      section.hidden = true;
+    };
+
+    if (playFallback) {
+      playFallback.addEventListener('click', () => {
+        playFallback.hidden = true;
+        tryPlay();
+      });
+    }
+
+    const resumeOnGesture = () => {
+      tryPlay();
+    };
+
+    window.addEventListener('click', resumeOnGesture, { once: true });
+    window.addEventListener('touchstart', resumeOnGesture, { once: true });
+    window.addEventListener('keydown', resumeOnGesture, { once: true });
+
+    video.load();
   }
 
   /* ── Photo Viewer ── */
@@ -424,27 +425,15 @@
   let isSwiping = false;
 
   function openViewer(images, index) {
-    viewerIdx = index;
     const viewer = $('#viewer');
-    const track = $('#viewer-track');
-    if (!viewer || !track || !images.length) return;
+    if (!viewer || !images.length) return;
 
     viewerImages = images;
-
-    track.innerHTML = viewerImages
-      .map(
-        (src) => `
-      <div class="viewer__slide">
-        <img src="${src}" alt="" loading="lazy" />
-      </div>
-    `
-      )
-      .join('');
 
     viewer.classList.add('is-active');
     viewer.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
-    goToSlide(viewerIdx, false);
+    goToSlide(index, false);
   }
 
   function closeViewer() {
@@ -465,8 +454,11 @@
     viewerIdx = idx;
 
     if (track) {
-      track.style.transition = animate ? 'transform 0.3s ease' : 'none';
-      track.style.transform = `translateX(-${idx * 100}%)`;
+      track.innerHTML = `
+        <div class="viewer__slide">
+          <img src="${viewerImages[idx]}" alt="" loading="eager" decoding="sync" />
+        </div>
+      `;
     }
     if (counter) {
       counter.textContent = `${idx + 1} / ${total}`;
@@ -498,14 +490,11 @@
       touchStartX = e.touches[0].clientX;
       touchDeltaX = 0;
       isSwiping = true;
-      track.style.transition = 'none';
     }, { passive: true });
 
     track.addEventListener('touchmove', (e) => {
       if (!isSwiping) return;
       touchDeltaX = e.touches[0].clientX - touchStartX;
-      const offset = -(viewerIdx * window.innerWidth) + touchDeltaX;
-      track.style.transform = `translateX(${offset}px)`;
     }, { passive: true });
 
     track.addEventListener('touchend', () => {
