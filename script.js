@@ -1,24 +1,40 @@
-/* ============================================
-   Romantic Flower - Mobile Wedding Invitation
-   script.js
-   ============================================ */
+/**
+ * Watercolor Soft Wedding Invitation
+ * Korean Mobile 청첩장 - Script
+ */
 
 (function () {
   'use strict';
 
-  /* ── Helpers ── */
+  /* ═══════════════════════════════════════════
+     Utility Helpers
+     ═══════════════════════════════════════════ */
+
   const $ = (sel, ctx = document) => ctx.querySelector(sel);
   const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
 
-  function padZero(n) {
-    return String(n).padStart(2, '0');
+  function formatDate(dateStr, timeStr) {
+    const d = new Date(`${dateStr}T${timeStr}:00`);
+    const days = ['일', '월', '화', '수', '목', '금', '토'];
+    const year = d.getFullYear();
+    const month = d.getMonth() + 1;
+    const date = d.getDate();
+    const day = days[d.getDay()];
+    const hours = d.getHours();
+    const minutes = d.getMinutes();
+    const period = hours < 12 ? '오전' : '오후';
+    const h12 = hours % 12 || 12;
+    const minuteStr = minutes > 0 ? ` ${minutes}분` : '';
+    return `${year}년 ${month}월 ${date}일 ${day}요일 ${period} ${h12}시${minuteStr}`;
   }
 
-  /* ── Image Auto-Detection ── */
-  // Discovered images stored here for use across functions
-  let galleryImages = [];
-  let storyImages = [];
-  let viewerImages = [];
+  function getWeddingDateTime() {
+    return new Date(`${CONFIG.wedding.date}T${CONFIG.wedding.time}:00`);
+  }
+
+  /* ═══════════════════════════════════════════
+     Image Auto-Detection
+     ═══════════════════════════════════════════ */
 
   function loadImagesFromFolder(folder, maxAttempts = 50) {
     return new Promise(resolve => {
@@ -51,725 +67,757 @@
     });
   }
 
-  /* ── Meta Tags ── */
-  function initMeta() {
-    document.title = CONFIG.meta.title;
-    const t = $('#og-title');
-    const d = $('#og-description');
-    const i = $('#og-image');
-    if (t) t.setAttribute('content', CONFIG.meta.title);
-    if (d) d.setAttribute('content', CONFIG.meta.description);
-    if (i) i.setAttribute('content', 'images/og/1.jpg');
-    const pt = $('#page-title');
-    if (pt) pt.textContent = CONFIG.meta.title;
+  function loadVideoAsset() {
+    const candidates = ['images/video/1.mp4', 'images/video/1.webm', 'images/video/1.mov'];
+
+    return new Promise((resolve) => {
+      function tryNext(index = 0) {
+        if (index >= candidates.length) {
+          resolve(null);
+          return;
+        }
+
+        const probe = document.createElement('video');
+        const cleanup = () => {
+          probe.onloadeddata = null;
+          probe.onerror = null;
+          probe.removeAttribute('src');
+          probe.load();
+        };
+
+        probe.preload = 'metadata';
+        probe.muted = true;
+        probe.playsInline = true;
+        probe.onloadeddata = () => {
+          const src = candidates[index];
+          cleanup();
+          resolve(src);
+        };
+        probe.onerror = () => {
+          cleanup();
+          tryNext(index + 1);
+        };
+        probe.src = candidates[index];
+      }
+
+      tryNext();
+    });
   }
 
-  /* ── Curtain ── */
+  /* ═══════════════════════════════════════════
+     Toast
+     ═══════════════════════════════════════════ */
+
+  let toastTimer = null;
+  function showToast(message) {
+    const el = $('#toast');
+    el.textContent = message;
+    el.classList.add('is-visible');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('is-visible'), 2500);
+  }
+
+  /* ═══════════════════════════════════════════
+     Clipboard
+     ═══════════════════════════════════════════ */
+
+  async function copyToClipboard(text, successMsg) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;opacity:0;left:-9999px';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+      showToast(successMsg || '복사되었습니다');
+    } catch {
+      showToast('복사에 실패했습니다');
+    }
+  }
+
+  /* ═══════════════════════════════════════════
+     OG Meta Tags
+     ═══════════════════════════════════════════ */
+
+  function setMetaTags() {
+    const m = CONFIG.meta;
+    document.title = m.title;
+    const setMeta = (attr, val, content) => {
+      const el = document.querySelector(`meta[${attr}="${val}"]`);
+      if (el) el.setAttribute('content', content);
+    };
+    setMeta('property', 'og:title', m.title);
+    setMeta('property', 'og:description', m.description);
+    setMeta('property', 'og:image', 'images/og/1.jpg');
+    setMeta('name', 'description', m.description);
+  }
+
+  /* ═══════════════════════════════════════════
+     Curtain (Watercolor Wash)
+     ═══════════════════════════════════════════ */
+
   function initCurtain() {
     const curtain = $('#curtain');
+    const btn = $('#curtainBtn');
+    const namesEl = $('#curtainNames');
 
-    // If useCurtain is false, skip the curtain entirely
     if (CONFIG.useCurtain === false) {
-      if (curtain) {
-        curtain.style.display = 'none';
-      }
-      // Start petals immediately since there's no curtain to open
-      initPetals();
+      curtain.style.display = 'none';
+      initSparkles();
       return;
     }
 
-    // Default behaviour (useCurtain is true or undefined for backwards compat)
-    const names = $('#curtain-names');
-    const btn = $('#curtain-open');
-    if (names) {
-      names.textContent =
-        CONFIG.groom.fullName + ' & ' + CONFIG.bride.fullName;
+    namesEl.textContent = `${CONFIG.groom.name}  &  ${CONFIG.bride.name}`;
+
+    btn.addEventListener('click', () => {
+      curtain.classList.add('is-open');
+      document.body.classList.remove('no-scroll');
+      setTimeout(() => {
+        curtain.classList.add('is-hidden');
+        initSparkles();
+      }, 1400);
+    });
+
+    document.body.classList.add('no-scroll');
+  }
+
+  /* ═══════════════════════════════════════════
+     Falling Pastel Confetti / Sparkles
+     ═══════════════════════════════════════════ */
+
+  function initSparkles() {
+    const canvas = $('#sparkleCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let width, height;
+    const particles = [];
+    const PARTICLE_COUNT = 30;
+
+    const colors = [
+      'rgba(232, 223, 240, 0.6)',  // lavender
+      'rgba(245, 224, 224, 0.6)',  // blush
+      'rgba(220, 232, 240, 0.55)', // sky
+      'rgba(224, 240, 232, 0.55)', // mint
+      'rgba(196, 168, 212, 0.4)',  // accent
+      'rgba(255, 255, 255, 0.7)'   // white sparkle
+    ];
+
+    function resize() {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
     }
-    if (btn) {
-      btn.addEventListener('click', () => {
-        curtain.classList.add('is-open');
-        document.body.style.overflow = '';
-        setTimeout(() => curtain.classList.add('is-hidden'), 1400);
-        initPetals();
+
+    resize();
+    window.addEventListener('resize', resize);
+
+    class Particle {
+      constructor() {
+        this.reset(true);
+      }
+
+      reset(initial = false) {
+        this.x = Math.random() * width;
+        this.y = initial ? Math.random() * height * -1 : -20;
+        this.size = 3 + Math.random() * 6;
+        this.speedY = 0.3 + Math.random() * 0.8;
+        this.speedX = -0.2 + Math.random() * 0.4;
+        this.rotation = Math.random() * Math.PI * 2;
+        this.rotSpeed = (Math.random() - 0.5) * 0.03;
+        this.oscillateAmp = 15 + Math.random() * 25;
+        this.oscillateSpeed = 0.008 + Math.random() * 0.015;
+        this.oscillateOffset = Math.random() * Math.PI * 2;
+        this.opacity = 0.3 + Math.random() * 0.5;
+        this.color = colors[Math.floor(Math.random() * colors.length)];
+        this.t = 0;
+        // 0 = circle confetti, 1 = sparkle star, 2 = soft blob
+        this.type = Math.floor(Math.random() * 3);
+      }
+
+      update() {
+        this.t++;
+        this.y += this.speedY;
+        this.x += this.speedX + Math.sin(this.t * this.oscillateSpeed + this.oscillateOffset) * 0.4;
+        this.rotation += this.rotSpeed;
+        if (this.y > height + 20) this.reset();
+      }
+
+      draw() {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation);
+        ctx.globalAlpha = this.opacity;
+
+        if (this.type === 0) {
+          // Circle confetti
+          ctx.fillStyle = this.color;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, this.size, this.size * 0.6, 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (this.type === 1) {
+          // Sparkle star (4-point)
+          ctx.fillStyle = this.color;
+          ctx.beginPath();
+          const s = this.size * 0.8;
+          for (let i = 0; i < 4; i++) {
+            const angle = (i * Math.PI) / 2;
+            ctx.lineTo(Math.cos(angle) * s, Math.sin(angle) * s);
+            const midAngle = angle + Math.PI / 4;
+            ctx.lineTo(Math.cos(midAngle) * s * 0.3, Math.sin(midAngle) * s * 0.3);
+          }
+          ctx.closePath();
+          ctx.fill();
+        } else {
+          // Soft blob
+          ctx.fillStyle = this.color;
+          ctx.beginPath();
+          ctx.arc(0, 0, this.size * 0.7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        ctx.restore();
+      }
+    }
+
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      particles.push(new Particle());
+    }
+
+    function animate() {
+      ctx.clearRect(0, 0, width, height);
+      particles.forEach(p => {
+        p.update();
+        p.draw();
       });
+      requestAnimationFrame(animate);
     }
-    document.body.style.overflow = 'hidden';
+
+    animate();
   }
 
-  /* ── Hero ── */
+  /* ═══════════════════════════════════════════
+     Hero Section
+     ═══════════════════════════════════════════ */
+
   function initHero() {
-    const img = $('#hero-img');
-    if (img) img.src = 'images/hero/1.jpg';
-
-    const names = $('#hero-names');
-    if (names) {
-      names.innerHTML =
-        CONFIG.groom.fullName +
-        ' <span class="ampersand">&amp;</span> ' +
-        CONFIG.bride.fullName;
-    }
-
-    const w = CONFIG.wedding;
-    const [y, m, d] = w.date.split('-');
-    const [hh, mm] = w.time.split(':');
-    const ampm = +hh < 12 ? '오전' : '오후';
-    const h12 = +hh % 12 || 12;
-
-    const dateEl = $('#hero-date');
-    if (dateEl) {
-      dateEl.textContent = `${y}년 ${+m}월 ${+d}일 ${w.dayOfWeek} ${ampm} ${h12}시${+mm ? ' ' + +mm + '분' : ''}`;
-    }
-
-    const venue = $('#hero-venue');
-    if (venue) venue.textContent = w.venue;
+    $('#heroPhoto').src = 'images/hero/1.jpg';
+    $('#heroNames').textContent = `${CONFIG.groom.name}  ·  ${CONFIG.bride.name}`;
+    $('#heroDate').textContent = formatDate(CONFIG.wedding.date, CONFIG.wedding.time);
+    $('#heroVenue').textContent = CONFIG.wedding.venue;
   }
 
-  /* ── Countdown ── */
+  /* ═══════════════════════════════════════════
+     Countdown
+     ═══════════════════════════════════════════ */
+
   function initCountdown() {
-    const w = CONFIG.wedding;
-    const [y, m, d] = w.date.split('-');
-    const [hh, mm] = w.time.split(':');
-    const target = new Date(+y, +m - 1, +d, +hh, +mm, 0).getTime();
+    const target = getWeddingDateTime();
 
     function update() {
-      const now = Date.now();
-      let diff = target - now;
-      if (diff < 0) diff = 0;
+      const now = new Date();
+      const diff = target - now;
+
+      const labelEl = $('#countdownLabel');
+
+      if (diff <= 0) {
+        $('#countDays').textContent = '0';
+        $('#countHours').textContent = '0';
+        $('#countMinutes').textContent = '0';
+        $('#countSeconds').textContent = '0';
+        labelEl.textContent = '결혼식이 시작되었습니다';
+        return;
+      }
+
+      const totalDays = Math.ceil(diff / (1000 * 60 * 60 * 24));
+      labelEl.textContent = `결혼식까지 D-${totalDays}`;
 
       const days = Math.floor(diff / (1000 * 60 * 60 * 24));
       const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
       const minutes = Math.floor((diff / (1000 * 60)) % 60);
       const seconds = Math.floor((diff / 1000) % 60);
 
-      const dEl = $('#cd-days');
-      const hEl = $('#cd-hours');
-      const mEl = $('#cd-minutes');
-      const sEl = $('#cd-seconds');
-      if (dEl) dEl.textContent = days;
-      if (hEl) hEl.textContent = padZero(hours);
-      if (mEl) mEl.textContent = padZero(minutes);
-      if (sEl) sEl.textContent = padZero(seconds);
+      $('#countDays').textContent = days;
+      $('#countHours').textContent = String(hours).padStart(2, '0');
+      $('#countMinutes').textContent = String(minutes).padStart(2, '0');
+      $('#countSeconds').textContent = String(seconds).padStart(2, '0');
     }
 
     update();
     setInterval(update, 1000);
   }
 
-  /* ── Greeting ── */
+  /* ═══════════════════════════════════════════
+     Greeting Section
+     ═══════════════════════════════════════════ */
+
   function initGreeting() {
-    const title = $('#greeting-title');
-    const text = $('#greeting-text');
-    const parents = $('#greeting-parents');
+    $('#greetingTitle').textContent = CONFIG.greeting.title;
+    $('#greetingContent').textContent = CONFIG.greeting.content;
 
-    if (title) title.textContent = CONFIG.greeting.title;
-    if (text) text.textContent = CONFIG.greeting.content;
+    const g = CONFIG.groom;
+    const b = CONFIG.bride;
 
-    if (parents) {
-      const g = CONFIG.groom;
-      const b = CONFIG.bride;
-
-      const makeName = (cfg, isDeceased) => {
-        return isDeceased
-          ? `<span class="deceased">${cfg}</span>`
-          : cfg;
-      };
-
-      parents.innerHTML = `
-        <span class="parent-line">
-          ${makeName(g.father, g.fatherDeceased)} &middot; ${makeName(g.mother, g.motherDeceased)}
-          <em>의 ${g.lastName === g.father?.charAt(0) ? '아들' : '아들'}</em> <strong>${g.name}</strong>
-        </span>
-        <span class="parent-dot">&amp;</span>
-        <span class="parent-line">
-          ${makeName(b.father, b.fatherDeceased)} &middot; ${makeName(b.mother, b.motherDeceased)}
-          <em>의 딸</em> <strong>${b.name}</strong>
-        </span>
-      `;
+    function parentLine(father, mother, fatherDeceased, motherDeceased) {
+      const fd = fatherDeceased ? ' deceased' : '';
+      const md = motherDeceased ? ' deceased' : '';
+      return `<span class="${fd}">${father}</span> · <span class="${md}">${mother}</span>`;
     }
+
+    const parentsHTML = `
+      <div class="parent-row">
+        ${parentLine(g.father, g.mother, g.fatherDeceased, g.motherDeceased)}
+        <span class="parent-dot">●</span>
+        의 아들 <span class="child-name">${g.name}</span>
+      </div>
+      <div class="parent-row">
+        ${parentLine(b.father, b.mother, b.fatherDeceased, b.motherDeceased)}
+        <span class="parent-dot">●</span>
+        의 딸 <span class="child-name">${b.name}</span>
+      </div>
+    `;
+
+    $('#greetingParents').innerHTML = parentsHTML;
   }
 
-  /* ── Calendar ── */
+  /* ═══════════════════════════════════════════
+     Calendar Section
+     ═══════════════════════════════════════════ */
+
   function initCalendar() {
-    const el = $('#calendar');
-    if (!el) return;
+    const dt = getWeddingDateTime();
+    const year = dt.getFullYear();
+    const month = dt.getMonth();
+    const weddingDay = dt.getDate();
 
-    const [y, m, d] = CONFIG.wedding.date.split('-').map(Number);
-    const first = new Date(y, m - 1, 1);
-    const lastDay = new Date(y, m, 0).getDate();
-    const startDow = first.getDay();
+    const grid = $('#calendarGrid');
 
-    const monthNames = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December',
-    ];
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'];
+    grid.innerHTML = `<div class="calendar__header">${monthNames[month]} ${year}</div>`;
 
-    let html = `<div class="calendar__header">${monthNames[m - 1]} ${y}</div>`;
-    html += '<div class="calendar__weekdays">';
-    ['일', '월', '화', '수', '목', '금', '토'].forEach((wd) => {
-      html += `<span class="calendar__weekday">${wd}</span>`;
+    const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+    const wdRow = document.createElement('div');
+    wdRow.className = 'calendar__weekdays';
+    weekdays.forEach(wd => {
+      const el = document.createElement('span');
+      el.className = 'calendar__weekday';
+      el.textContent = wd;
+      wdRow.appendChild(el);
     });
-    html += '</div><div class="calendar__days">';
+    grid.appendChild(wdRow);
 
-    for (let i = 0; i < startDow; i++) {
-      html += '<span class="calendar__day is-empty"></span>';
-    }
-    for (let day = 1; day <= lastDay; day++) {
-      const cls = day === d ? ' is-today' : '';
-      html += `<span class="calendar__day${cls}">${day}</span>`;
-    }
-    html += '</div>';
-    el.innerHTML = html;
+    const daysContainer = document.createElement('div');
+    daysContainer.className = 'calendar__days';
 
-    // Google Calendar
-    const gBtn = $('#btn-google-cal');
-    if (gBtn) {
-      gBtn.addEventListener('click', () => {
-        const w = CONFIG.wedding;
-        const [yy, mm2, dd] = w.date.split('-');
-        const [th, tm] = w.time.split(':');
-        const start = `${yy}${mm2}${dd}T${th}${tm}00`;
-        const endH = padZero(+th + 2);
-        const end = `${yy}${mm2}${dd}T${endH}${tm}00`;
-        const url =
-          `https://calendar.google.com/calendar/render?action=TEMPLATE` +
-          `&text=${encodeURIComponent(CONFIG.meta.title)}` +
-          `&dates=${start}/${end}` +
-          `&location=${encodeURIComponent(w.venue + ' ' + w.address)}` +
-          `&details=${encodeURIComponent(CONFIG.meta.description)}`;
-        window.open(url, '_blank');
-      });
+    const firstDay = new Date(year, month, 1).getDay();
+    const lastDate = new Date(year, month + 1, 0).getDate();
+
+    for (let i = 0; i < firstDay; i++) {
+      const empty = document.createElement('span');
+      empty.className = 'calendar__day is-empty';
+      daysContainer.appendChild(empty);
     }
 
-    // Apple Calendar (.ics)
-    const iBtn = $('#btn-ics-cal');
-    if (iBtn) {
-      iBtn.addEventListener('click', () => {
-        const w = CONFIG.wedding;
-        const [yy, mm2, dd] = w.date.split('-');
-        const [th, tm] = w.time.split(':');
-        const start = `${yy}${mm2}${dd}T${th}${tm}00`;
-        const endH = padZero(+th + 2);
-        const end = `${yy}${mm2}${dd}T${endH}${tm}00`;
-        const ics = [
-          'BEGIN:VCALENDAR',
-          'VERSION:2.0',
-          'PRODID:-//WeddingInvitation//EN',
-          'BEGIN:VEVENT',
-          `DTSTART:${start}`,
-          `DTEND:${end}`,
-          `SUMMARY:${CONFIG.meta.title}`,
-          `LOCATION:${w.venue} ${w.address}`,
-          `DESCRIPTION:${CONFIG.meta.description}`,
-          'END:VEVENT',
-          'END:VCALENDAR',
-        ].join('\r\n');
-
-        const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = 'wedding.ics';
-        link.click();
-        URL.revokeObjectURL(link.href);
-      });
+    for (let d = 1; d <= lastDate; d++) {
+      const dayEl = document.createElement('span');
+      dayEl.className = 'calendar__day';
+      if (d === weddingDay) dayEl.classList.add('is-today');
+      dayEl.textContent = d;
+      daysContainer.appendChild(dayEl);
     }
+
+    grid.appendChild(daysContainer);
+
+    // Google Calendar link
+    const startDate = dt.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const endDt = new Date(dt.getTime() + 2 * 60 * 60 * 1000);
+    const endDate = endDt.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(CONFIG.groom.name + ' ♥ ' + CONFIG.bride.name + ' 결혼식')}&dates=${startDate}/${endDate}&location=${encodeURIComponent(CONFIG.wedding.venue + ' ' + CONFIG.wedding.address)}&details=${encodeURIComponent('결혼식에 초대합니다.')}`;
+    $('#googleCalBtn').href = gcalUrl;
+
+    // ICS download (Apple Calendar)
+    $('#icsDownloadBtn').addEventListener('click', () => {
+      const icsContent = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Wedding//Invitation//KO',
+        'BEGIN:VEVENT',
+        `DTSTART:${startDate}`,
+        `DTEND:${endDate}`,
+        `SUMMARY:${CONFIG.groom.name} ♥ ${CONFIG.bride.name} 결혼식`,
+        `LOCATION:${CONFIG.wedding.venue} ${CONFIG.wedding.address}`,
+        'DESCRIPTION:결혼식에 초대합니다.',
+        'END:VEVENT',
+        'END:VCALENDAR'
+      ].join('\r\n');
+
+      const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'wedding.ics';
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('캘린더 파일이 다운로드됩니다');
+    });
   }
 
-  /* ── Story (async — waits for image discovery) ── */
-  async function initStory() {
-    const title = $('#story-title');
-    const text = $('#story-text');
-    const container = $('#story-images');
+  /* ═══════════════════════════════════════════
+     Story Section
+     ═══════════════════════════════════════════ */
 
-    if (title) title.textContent = CONFIG.story.title;
-    if (text) text.textContent = CONFIG.story.content;
+  function initStory(storyImages) {
+    $('#storyTitle').textContent = CONFIG.story.title;
+    $('#storyContent').textContent = CONFIG.story.content;
 
-    if (!container) return;
+    const container = $('#storyPhotos');
+    const placeholder = container.querySelector('.loading-placeholder');
+    if (placeholder) placeholder.remove();
 
-    // Show loading placeholder
-    container.innerHTML = '<div class="section-loading"><span class="section-loading__dot"></span><span class="section-loading__dot"></span><span class="section-loading__dot"></span></div>';
+    if (storyImages.length === 0) return;
 
-    storyImages = await loadImagesFromFolder('story');
-
-    if (storyImages.length > 0) {
-      container.innerHTML = storyImages
-        .map(
-          (src, i) => `
-        <div class="story__img-card anim-scale-target" data-index="${i}">
-          <img src="${src}" alt="우리의 이야기" loading="lazy" />
-        </div>
-      `
-        )
-        .join('');
-      container.addEventListener('click', (e) => {
-        const card = e.target.closest('.story__img-card');
-        if (card) {
-          openViewer(storyImages, Number(card.dataset.index || 0));
-        }
-      });
-      // Re-observe new elements for scroll animations
-      observeNewElements(container);
-    } else {
-      container.innerHTML = '';
-    }
+    storyImages.forEach((src, i) => {
+      const div = document.createElement('div');
+      div.className = 'story__photo-item animate-item';
+      div.setAttribute('data-animate', 'fade-up');
+      div.innerHTML = `<img src="${src}" alt="스토리 사진 ${i + 1}" loading="lazy">`;
+      div.addEventListener('click', () => openPhotoModal(storyImages, i));
+      container.appendChild(div);
+    });
   }
 
-  /* ── Gallery (async — waits for image discovery) ── */
-  async function initGallery() {
-    const grid = $('#gallery-grid');
-    const section = $('#gallery');
-    if (!grid) return;
+  /* ═══════════════════════════════════════════
+     Gallery Section
+     ═══════════════════════════════════════════ */
 
-    // Show loading placeholder
-    grid.innerHTML = '<div class="section-loading"><span class="section-loading__dot"></span><span class="section-loading__dot"></span><span class="section-loading__dot"></span></div>';
-
-    galleryImages = await loadImagesFromFolder('gallery');
+  function initGallery(galleryImages) {
+    const grid = $('#galleryGrid');
+    const placeholder = grid.querySelector('.loading-placeholder');
+    if (placeholder) placeholder.remove();
 
     if (galleryImages.length === 0) {
-      // Hide entire gallery section if no images found
-      if (section) section.style.display = 'none';
+      const gallerySection = $('#gallery');
+      if (gallerySection) gallerySection.style.display = 'none';
       return;
     }
 
-    grid.innerHTML = galleryImages
-      .map(
-        (src, i) => `
-      <div class="gallery__item" data-index="${i}">
-        <img src="${src}" alt="갤러리 사진 ${i + 1}" loading="lazy" />
-      </div>
-    `
-      )
-      .join('');
-
-    grid.addEventListener('click', (e) => {
-      const item = e.target.closest('.gallery__item');
-      if (item) {
-        openViewer(galleryImages, Number(item.dataset.index || 0));
-      }
+    galleryImages.forEach((src, i) => {
+      const div = document.createElement('div');
+      div.className = 'gallery__item animate-item';
+      div.setAttribute('data-animate', 'scale-in');
+      div.innerHTML = `<img src="${src}" alt="갤러리 사진 ${i + 1}" loading="lazy">`;
+      div.addEventListener('click', () => openPhotoModal(galleryImages, i));
+      grid.appendChild(div);
     });
-
-    // Re-observe new elements for scroll animations
-    observeNewElements(grid);
   }
 
-  async function initVideoSection() {
-    const section = $('#videoSection');
-    const frame = $('#videoFrame');
-    const video = $('#weddingVideo');
-    const playFallback = $('#videoPlayFallback');
-    if (!section || !video) return;
+  /* ═══════════════════════════════════════════
+     Photo Modal (with swipe)
+     ═══════════════════════════════════════════ */
 
+  let modalImages = [];
+  let modalIndex = 0;
+  let modalScrollY = 0;
+  let touchStartX = 0;
+  let touchEndX = 0;
+  let touchStartY = 0;
+  let touchEndY = 0;
+
+  function initVideoSection(videoSrc) {
+    const section = $('#videoSection');
+    const video = $('#weddingVideo');
+    const frame = video ? video.closest('.video__frame') : null;
+    if (!section || !video || !videoSrc) return;
+
+    video.src = videoSrc;
     video.muted = true;
     video.defaultMuted = true;
     video.autoplay = true;
     video.loop = true;
     video.playsInline = true;
-    video.controls = false;
     video.setAttribute('muted', '');
     video.setAttribute('autoplay', '');
     video.setAttribute('playsinline', '');
-    video.removeAttribute('controls');
-    video.setAttribute('disablepictureinpicture', '');
-    video.setAttribute('disableremoteplayback', '');
     section.hidden = false;
-
-    const tryPlay = () => {
-      video.play()
-        .then(() => {
-          if (playFallback) playFallback.hidden = true;
-        })
-        .catch(() => {
-          if (playFallback) playFallback.hidden = false;
-        });
-    };
-
-    video.onloadedmetadata = () => {
+    video.addEventListener('loadedmetadata', () => {
       if (frame && video.videoWidth && video.videoHeight) {
         frame.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
       }
-      if (video.duration && video.duration > 0.1) {
-        video.currentTime = 0.1;
+    }, { once: true });
+    video.play().catch(() => {});
+  }
+
+  function openPhotoModal(images, index) {
+    modalImages = images;
+    modalIndex = index;
+    showModalImage();
+    modalScrollY = window.scrollY || window.pageYOffset || 0;
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${modalScrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+    $('#photoModal').classList.add('is-open');
+  }
+
+  function closePhotoModal() {
+    $('#photoModal').classList.remove('is-open');
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.left = '';
+    document.body.style.right = '';
+    document.body.style.width = '';
+    window.scrollTo(0, modalScrollY);
+  }
+
+  function showModalImage() {
+    const img = $('#modalImg');
+    img.src = modalImages[modalIndex];
+    $('#modalCounter').textContent = `${modalIndex + 1} / ${modalImages.length}`;
+
+    $('#modalPrev').style.display = modalIndex > 0 ? '' : 'none';
+    $('#modalNext').style.display = modalIndex < modalImages.length - 1 ? '' : 'none';
+  }
+
+  function modalNavigate(dir) {
+    const newIndex = modalIndex + dir;
+    if (newIndex >= 0 && newIndex < modalImages.length) {
+      modalIndex = newIndex;
+      showModalImage();
+    }
+  }
+
+  function initPhotoModal() {
+    $('#modalClose').addEventListener('click', closePhotoModal);
+    $('#modalPrev').addEventListener('click', () => modalNavigate(-1));
+    $('#modalNext').addEventListener('click', () => modalNavigate(1));
+
+    const modal = $('#photoModal');
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal || e.target.id === 'modalContainer') {
+        closePhotoModal();
       }
-      tryPlay();
-    };
+    });
 
-    video.oncanplay = () => {
-      tryPlay();
-    };
-
-    video.onerror = () => {
-      section.hidden = true;
-    };
-
-    if (playFallback) {
-      playFallback.addEventListener('click', () => {
-        playFallback.hidden = true;
-        tryPlay();
-      });
-    }
-
-    const resumeOnGesture = () => {
-      tryPlay();
-    };
-
-    window.addEventListener('click', resumeOnGesture, { once: true });
-    window.addEventListener('touchstart', resumeOnGesture, { once: true });
-    window.addEventListener('keydown', resumeOnGesture, { once: true });
-
-    video.load();
-  }
-
-  /* ── Photo Viewer ── */
-  let viewerIdx = 0;
-  let touchStartX = 0;
-  let touchDeltaX = 0;
-  let isSwiping = false;
-
-  function openViewer(images, index) {
-    const viewer = $('#viewer');
-    if (!viewer || !images.length) return;
-
-    viewerImages = images;
-
-    viewer.classList.add('is-active');
-    viewer.setAttribute('aria-hidden', 'false');
-    document.body.style.overflow = 'hidden';
-    goToSlide(index, false);
-  }
-
-  function closeViewer() {
-    const viewer = $('#viewer');
-    if (!viewer) return;
-    viewer.classList.remove('is-active');
-    viewer.setAttribute('aria-hidden', 'true');
-    document.body.style.overflow = '';
-  }
-
-  function goToSlide(idx, animate = true) {
-    const track = $('#viewer-track');
-    const counter = $('#viewer-counter');
-    const total = viewerImages.length;
-    if (total === 0) return;
-    if (idx < 0) idx = 0;
-    if (idx >= total) idx = total - 1;
-    viewerIdx = idx;
-
-    if (track) {
-      track.innerHTML = `
-        <div class="viewer__slide">
-          <img src="${viewerImages[idx]}" alt="" loading="eager" decoding="sync" />
-        </div>
-      `;
-    }
-    if (counter) {
-      counter.textContent = `${idx + 1} / ${total}`;
-    }
-  }
-
-  function initViewer() {
-    const viewer = $('#viewer');
-    if (!viewer) return;
-
-    $('#viewer-close')?.addEventListener('click', closeViewer);
-    viewer.querySelector('.viewer__backdrop')?.addEventListener('click', closeViewer);
-    $('#viewer-prev')?.addEventListener('click', () => goToSlide(viewerIdx - 1));
-    $('#viewer-next')?.addEventListener('click', () => goToSlide(viewerIdx + 1));
-
-    // Keyboard
+    // Keyboard navigation
     document.addEventListener('keydown', (e) => {
-      if (!viewer.classList.contains('is-active')) return;
-      if (e.key === 'Escape') closeViewer();
-      if (e.key === 'ArrowLeft') goToSlide(viewerIdx - 1);
-      if (e.key === 'ArrowRight') goToSlide(viewerIdx + 1);
+      if (!modal.classList.contains('is-open')) return;
+      if (e.key === 'Escape') closePhotoModal();
+      if (e.key === 'ArrowLeft') modalNavigate(-1);
+      if (e.key === 'ArrowRight') modalNavigate(1);
     });
 
-    // Touch/Swipe
-    const track = $('#viewer-track');
-    if (!track) return;
+    // Swipe support
+    const container = $('#modalContainer');
 
-    track.addEventListener('touchstart', (e) => {
-      touchStartX = e.touches[0].clientX;
-      touchDeltaX = 0;
-      isSwiping = true;
+    container.addEventListener('touchstart', (e) => {
+      touchStartX = e.changedTouches[0].screenX;
+      touchStartY = e.changedTouches[0].screenY;
     }, { passive: true });
 
-    track.addEventListener('touchmove', (e) => {
-      if (!isSwiping) return;
-      touchDeltaX = e.touches[0].clientX - touchStartX;
+    container.addEventListener('touchend', (e) => {
+      touchEndX = e.changedTouches[0].screenX;
+      touchEndY = e.changedTouches[0].screenY;
+      handleSwipe();
     }, { passive: true });
-
-    track.addEventListener('touchend', () => {
-      if (!isSwiping) return;
-      isSwiping = false;
-      const threshold = window.innerWidth * 0.2;
-      if (touchDeltaX < -threshold) {
-        goToSlide(viewerIdx + 1);
-      } else if (touchDeltaX > threshold) {
-        goToSlide(viewerIdx - 1);
-      } else {
-        goToSlide(viewerIdx);
-      }
-    });
   }
 
-  /* ── Location ── */
+  function handleSwipe() {
+    const diffX = touchStartX - touchEndX;
+    const diffY = touchStartY - touchEndY;
+    const minSwipe = 50;
+
+    if (Math.abs(diffX) < minSwipe || Math.abs(diffX) < Math.abs(diffY)) return;
+
+    if (diffX > 0) {
+      modalNavigate(1);
+    } else {
+      modalNavigate(-1);
+    }
+  }
+
+  /* ═══════════════════════════════════════════
+     Location Section
+     ═══════════════════════════════════════════ */
+
   function initLocation() {
     const w = CONFIG.wedding;
-    const venue = $('#loc-venue');
-    const hall = $('#loc-hall');
-    const addr = $('#loc-address');
-    const tel = $('#loc-tel');
-    const mapImg = $('#loc-map-img');
+    const ml = CONFIG.mapLinks;
+    const mapImg = $('#locationMapImg');
+    $('#locationVenue').textContent = w.venue;
+    $('#locationHall').textContent = w.hall;
+    $('#locationAddress').textContent = w.address;
+    $('#locationTel').textContent = w.tel ? `Tel. ${w.tel}` : '';
+    mapImg.src = 'images/location/1.jpg';
+    mapImg.addEventListener('click', () => openPhotoModal(['images/location/1.jpg'], 0));
+    $('#kakaoMapBtn').href = ml.kakao || '#';
+    $('#naverMapBtn').href = ml.naver || '#';
 
-    if (venue) venue.textContent = w.venue;
-    if (hall) hall.textContent = w.hall;
-    if (addr) addr.textContent = w.address;
-    if (tel) tel.textContent = `Tel. ${w.tel}`;
-    if (mapImg) mapImg.src = 'images/location/1.jpg';
-    if (mapImg) {
-      mapImg.addEventListener('click', () => {
-        openViewer(['images/location/1.jpg'], 0);
-      });
-    }
-
-    const kakao = $('#btn-kakao-map');
-    const naver = $('#btn-naver-map');
-    if (kakao) kakao.href = w.mapLinks.kakao;
-    if (naver) naver.href = w.mapLinks.naver;
-
-    const copyBtn = $('#btn-copy-address');
-    if (copyBtn) {
-      copyBtn.addEventListener('click', () => {
-        copyToClipboard(w.address, '주소가 복사되었습니다');
-      });
-    }
+    $('#copyAddressBtn').addEventListener('click', () => {
+      copyToClipboard(w.address, '주소가 복사되었습니다');
+    });
   }
 
-  /* ── Account ── */
-  function initAccount() {
-    const groomBody = $('#acc-groom-body');
-    const brideBody = $('#acc-bride-body');
+  /* ═══════════════════════════════════════════
+     Account Section (축의금)
+     ═══════════════════════════════════════════ */
 
-    if (groomBody) {
-      groomBody.innerHTML = renderAccounts(CONFIG.accounts.groom);
-    }
-    if (brideBody) {
-      brideBody.innerHTML = renderAccounts(CONFIG.accounts.bride);
-    }
-
-    // Accordion toggle
-    $$('.accordion__toggle').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const acc = btn.closest('.accordion');
-        acc.classList.toggle('is-open');
-      });
+  function renderAccounts(accounts, containerId) {
+    const container = $(`#${containerId}`);
+    accounts.forEach((acc) => {
+      const item = document.createElement('div');
+      item.className = 'account-item';
+      item.innerHTML = `
+        <div class="account-item__info">
+          <div class="account-item__role">${acc.role}</div>
+          <div class="account-item__detail">
+            <span class="account-item__name">${acc.name || ''}</span>
+            ${acc.bank} ${acc.number}
+          </div>
+        </div>
+        <button class="account-item__copy" data-account="${acc.bank} ${acc.number} ${acc.name || ''}">
+          복사
+        </button>
+      `;
+      container.appendChild(item);
     });
+  }
 
-    // Copy account
-    document.addEventListener('click', (e) => {
-      const copyBtn = e.target.closest('.account-item__copy');
-      if (copyBtn) {
-        const account = copyBtn.dataset.account;
-        copyToClipboard(account, '계좌번호가 복사되었습니다');
+  function initAccordion(triggerId, panelId) {
+    const trigger = $(`#${triggerId}`);
+    const panel = $(`#${panelId}`);
+
+    trigger.addEventListener('click', () => {
+      const expanded = trigger.getAttribute('aria-expanded') === 'true';
+      trigger.setAttribute('aria-expanded', !expanded);
+
+      if (!expanded) {
+        panel.style.maxHeight = panel.scrollHeight + 'px';
+      } else {
+        panel.style.maxHeight = '0';
       }
     });
   }
 
-  function renderAccounts(accounts) {
-    return accounts
-      .map(
-        (acc) => `
-      <div class="account-item">
-        <div class="account-item__info">
-          <p class="account-item__role">${acc.role}</p>
-          <p class="account-item__detail">
-            <span class="account-item__name">${acc.name}</span>
-            ${acc.bank} ${acc.number}
-          </p>
-        </div>
-        <button class="account-item__copy" data-account="${acc.bank} ${acc.number} ${acc.name}">복사</button>
-      </div>
-    `
-      )
-      .join('');
+  function initAccounts() {
+    renderAccounts(CONFIG.accounts.groom, 'groomAccountList');
+    renderAccounts(CONFIG.accounts.bride, 'brideAccountList');
+
+    initAccordion('groomAccordion', 'groomAccordionPanel');
+    initAccordion('brideAccordion', 'brideAccordionPanel');
+
+    // Copy account delegates
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.account-item__copy');
+      if (!btn) return;
+      const text = btn.dataset.account;
+      copyToClipboard(text, '계좌번호가 복사되었습니다');
+    });
   }
 
-  /* ── Toast ── */
-  let toastTimer = null;
-  function showToast(msg) {
-    const toast = $('#toast');
-    if (!toast) return;
-    toast.textContent = msg;
-    toast.classList.add('is-visible');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      toast.classList.remove('is-visible');
-    }, 2200);
+  /* ═══════════════════════════════════════════
+     Footer
+     ═══════════════════════════════════════════ */
+
+  function initFooter() {
+    const dt = getWeddingDateTime();
+    const year = dt.getFullYear();
+    const month = String(dt.getMonth() + 1).padStart(2, '0');
+    const day = String(dt.getDate()).padStart(2, '0');
+    $('#footerText').textContent = `${CONFIG.groom.name} & ${CONFIG.bride.name} — ${year}.${month}.${day}`;
   }
 
-  /* ── Clipboard ── */
-  function copyToClipboard(text, toastMsg) {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(() => {
-        showToast(toastMsg);
-      }).catch(() => {
-        fallbackCopy(text, toastMsg);
-      });
-    } else {
-      fallbackCopy(text, toastMsg);
-    }
+  /* ═══════════════════════════════════════════
+     Loading Placeholders
+     ═══════════════════════════════════════════ */
+
+  function showLoadingPlaceholders() {
+    const storyPhotos = $('#storyPhotos');
+    const galleryGrid = $('#galleryGrid');
+
+    const placeholderHTML = '<div class="loading-placeholder"><span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span></div>';
+
+    if (storyPhotos) storyPhotos.innerHTML = placeholderHTML;
+    if (galleryGrid) galleryGrid.innerHTML = placeholderHTML;
   }
 
-  function fallbackCopy(text, toastMsg) {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.position = 'fixed';
-    ta.style.left = '-9999px';
-    document.body.appendChild(ta);
-    ta.select();
-    try {
-      document.execCommand('copy');
-      showToast(toastMsg);
-    } catch (e) {
-      showToast('복사에 실패했습니다');
-    }
-    document.body.removeChild(ta);
-  }
-
-  /* ── Scroll Animations (IntersectionObserver) ── */
-  let scrollObserver = null;
+  /* ═══════════════════════════════════════════
+     Scroll Animations (IntersectionObserver)
+     ═══════════════════════════════════════════ */
 
   function initScrollAnimations() {
-    const targets = $$('.anim-target, .gallery__item, .story__img-card');
-    if (!targets.length) return;
-
-    scrollObserver = new IntersectionObserver(
+    const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             entry.target.classList.add('is-visible');
-            scrollObserver.unobserve(entry.target);
+            observer.unobserve(entry.target);
           }
         });
       },
-      { threshold: 0.15, rootMargin: '0px 0px -40px 0px' }
+      {
+        threshold: 0.15,
+        rootMargin: '0px 0px -40px 0px'
+      }
     );
 
-    targets.forEach((el) => scrollObserver.observe(el));
-  }
+    $$('.animate-item').forEach((el) => observer.observe(el));
 
-  // Re-observe dynamically added elements after async image loading
-  function observeNewElements(container) {
-    if (!scrollObserver) return;
-    const targets = $$('.gallery__item, .story__img-card', container);
-    targets.forEach((el) => scrollObserver.observe(el));
-  }
-
-  /* ── Falling Petals ── */
-  function initPetals() {
-    const canvas = $('#petals-canvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    let W, H;
-    const petals = [];
-    const PETAL_COUNT = 25;
-
-    const petalColors = [
-      'rgba(183, 110, 121, 0.5)',
-      'rgba(212, 160, 168, 0.45)',
-      'rgba(245, 190, 195, 0.4)',
-      'rgba(240, 180, 170, 0.35)',
-      'rgba(200, 140, 150, 0.4)',
-    ];
-
-    function resize() {
-      W = canvas.width = window.innerWidth;
-      H = canvas.height = window.innerHeight;
-    }
-
-    function createPetal() {
-      return {
-        x: Math.random() * W,
-        y: -20 - Math.random() * H * 0.3,
-        size: 6 + Math.random() * 10,
-        speedY: 0.4 + Math.random() * 0.8,
-        speedX: -0.3 + Math.random() * 0.6,
-        rotation: Math.random() * Math.PI * 2,
-        rotSpeed: (Math.random() - 0.5) * 0.03,
-        wobble: Math.random() * Math.PI * 2,
-        wobbleSpeed: 0.01 + Math.random() * 0.02,
-        color: petalColors[Math.floor(Math.random() * petalColors.length)],
-        opacity: 0.3 + Math.random() * 0.4,
-      };
-    }
-
-    function drawPetal(p) {
-      ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.rotation);
-      ctx.globalAlpha = p.opacity;
-      ctx.fillStyle = p.color;
-
-      // Petal shape
-      ctx.beginPath();
-      const s = p.size;
-      ctx.moveTo(0, 0);
-      ctx.bezierCurveTo(s * 0.3, -s * 0.4, s * 0.8, -s * 0.3, s * 0.5, 0);
-      ctx.bezierCurveTo(s * 0.8, s * 0.3, s * 0.3, s * 0.4, 0, 0);
-      ctx.fill();
-
-      ctx.restore();
-    }
-
-    function animate() {
-      ctx.clearRect(0, 0, W, H);
-      petals.forEach((p) => {
-        p.wobble += p.wobbleSpeed;
-        p.x += p.speedX + Math.sin(p.wobble) * 0.5;
-        p.y += p.speedY;
-        p.rotation += p.rotSpeed;
-
-        if (p.y > H + 20) {
-          p.y = -20;
-          p.x = Math.random() * W;
-        }
-        if (p.x < -20) p.x = W + 20;
-        if (p.x > W + 20) p.x = -20;
-
-        drawPetal(p);
+    // Re-observe after dynamic content is added
+    const mutObs = new MutationObserver((mutations) => {
+      mutations.forEach((m) => {
+        m.addedNodes.forEach((node) => {
+          if (node.nodeType !== 1) return;
+          if (node.classList && node.classList.contains('animate-item')) {
+            observer.observe(node);
+          }
+          if (node.querySelectorAll) {
+            node.querySelectorAll('.animate-item').forEach((el) => observer.observe(el));
+          }
+        });
       });
-      requestAnimationFrame(animate);
-    }
+    });
 
-    resize();
-    window.addEventListener('resize', resize);
-    for (let i = 0; i < PETAL_COUNT; i++) {
-      petals.push(createPetal());
-    }
-    animate();
+    mutObs.observe(document.body, { childList: true, subtree: true });
   }
 
-  /* ── Init ── */
+  /* ═══════════════════════════════════════════
+     Init
+     ═══════════════════════════════════════════ */
+
   async function init() {
-    // Synchronous inits (no image dependency)
-    initMeta();
+    setMetaTags();
     initCurtain();
     initHero();
     initCountdown();
     initGreeting();
     initCalendar();
-    initViewer();
+
+    showLoadingPlaceholders();
+
+    initPhotoModal();
     initLocation();
-    initAccount();
+    initAccounts();
+    initFooter();
+    initScrollAnimations();
 
-    // Delay scroll animations so they don't fire during curtain
-    setTimeout(initScrollAnimations, 200);
+    $('#storyTitle').textContent = CONFIG.story.title;
+    $('#storyContent').textContent = CONFIG.story.content;
 
-    // Async inits (discover images, then render)
-    await Promise.all([
-      initStory(),
-      initGallery(),
-      initVideoSection(),
+    const [storyImages, galleryImages, videoSrc] = await Promise.all([
+      loadImagesFromFolder('story'),
+      loadImagesFromFolder('gallery'),
+      loadVideoAsset()
     ]);
+
+    initStory(storyImages);
+    initGallery(galleryImages);
+    initVideoSection(videoSrc);
   }
 
   if (document.readyState === 'loading') {
